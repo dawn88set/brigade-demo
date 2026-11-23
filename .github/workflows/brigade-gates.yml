@@ -1,0 +1,84 @@
+# Installed by `brigade init`. Deterministic PR gates that no agent controls:
+#   risk       labels the PR risk:low|medium|high, plus needs-human when human-gated paths or content change
+#   integrity  fails when tests are deleted/skipped, .only is added, or protected files change,
+#              unless a maintainer approved the current head (the approval re-runs this workflow)
+# gates.py is vendored at .github/brigade/gates.py so this works without access to the kit repo.
+name: brigade-gates
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+concurrency:
+  group: brigade-gates-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  risk:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Assess risk
+        id: risk
+        run: |
+          python3 .github/brigade/gates.py risk --base "origin/${{ github.base_ref }}" --head HEAD > risk.json
+          cat risk.json
+          echo "risk=$(python3 -c 'import json;print(json.load(open("risk.json"))["risk"])')" >> "$GITHUB_OUTPUT"
+          echo "human=$(python3 -c 'import json;print(str(json.load(open("risk.json"))["needs_human"]).lower())')" >> "$GITHUB_OUTPUT"
+      - name: Apply labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          RISK: ${{ steps.risk.outputs.risk }}
+          HUMAN: ${{ steps.risk.outputs.human }}
+        run: |
+          for l in risk:low risk:medium risk:high needs-human; do
+            gh label create "$l" -R "$GITHUB_REPOSITORY" --force >/dev/null 2>&1 || true
+          done
+          for l in risk:low risk:medium risk:high; do
+            [ "$l" = "risk:$RISK" ] || gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --remove-label "$l" >/dev/null 2>&1 || true
+          done
+          gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label "risk:$RISK"
+          if [ "$HUMAN" = "true" ]; then gh pr edit "$PR" -R "$GITHUB_REPOSITORY" --add-label needs-human; fi
+
+  integrity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check gate integrity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if python3 .github/brigade/gates.py integrity --base "origin/${{ github.event.pull_request.base.ref }}" --head HEAD; then
+            exit 0
+          fi
+          approved=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" --paginate \
+            --jq "[.[] | select(.state==\"APPROVED\" and .commit_id==\"$HEAD_SHA\" and (.author_association==\"OWNER\" or .author_association==\"MEMBER\"))] | length")
+          if [ "${approved:-0}" -gt 0 ]; then
+            echo "::notice::Gate changes approved by a maintainer on $HEAD_SHA"
+            exit 0
+          fi
+          echo "::error::This PR weakens a gate (see above). A maintainer must approve the current head."
+          exit 1

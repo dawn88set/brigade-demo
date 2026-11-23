@@ -1,0 +1,37 @@
+# Brigade project profile. See the kit's docs/contracts.md.
+[project]
+name = "brigade-demo"
+default_branch = "main"
+
+[trust]
+maintainers = ["dawn88set"]   # agents only act on issues and comments from these logins
+bots = ["app/brigade-author", "brigade-author[bot]"]   # issues filed by slice/reflect; never intents
+
+[reflect]
+after = 5                 # reflect once this many merged agent PRs are not yet reflected on
+
+[commands]
+fast = "pnpm run lint && pnpm run typecheck && pnpm run test"
+full = "pnpm run verify && pnpm run build"
+install = "pnpm install --frozen-lockfile"
+
+[verify]
+up = ""            # command that boots the app for a verifier and prints BASE_URL=...
+down = ""
+feature_map = ".agents/skills/verify/references/features"
+
+[risk]
+human = [".github/**", ".claude/**", ".agents/**", "CODEOWNERS", "brigade.toml", ".noodle.toml", "infra/**"]
+high = []
+medium = ["src/**", "app/**", "apps/**", "packages/**", "services/**", "lib/**"]
+human_content = ['(?i)\bdrop\s+(table|column)\b', '(?i)\balter\s+table\b.*\b(drop|rename)\b', '(?i)\b(create|alter)\s+policy\b']
+
+[gates]
+protected = []     # e.g. coverage thresholds, lint configs
+suppressions_block = false
+
+[review.routing]
+# "path/glob/**" = ["reviewer-agent"]
+
+[merge]
+branch_prefix = "agent/"
