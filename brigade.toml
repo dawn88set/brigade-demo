@@ -16,6 +16,7 @@ full = "pnpm run verify && pnpm run build"
 install = "pnpm install --frozen-lockfile"
 
 [verify]
+run = "pnpm run build && node -e \"import('./dist/index.js').then(m => console.log(Object.keys(m)))\""   # a library: build, import, call
 up = ""            # command that boots the app for a verifier and prints BASE_URL=...
 down = ""
 feature_map = ".agents/skills/verify/references/features"
@@ -35,3 +36,6 @@ suppressions_block = false
 
 [merge]
 branch_prefix = "agent/"
+
+[verdict]
+mode = "user-status"   # DEMO ONLY: verdicts as commit statuses with the user's token (no GitHub Apps yet). Insecure.
