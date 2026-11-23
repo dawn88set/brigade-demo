@@ -15,5 +15,6 @@ describe("farewell", () => {
 });
 
 describe("public API", () => {
-  it("exports exactly greet and farewell", () => expect(Object.keys(lib).sort()).toEqual(["farewell", "greet"]));
+  it("exports exactly greet and farewell", () =>
+    expect(Object.keys(lib).sort()).toEqual(["farewell", "greet"]));
 });
